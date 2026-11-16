@@ -1,0 +1,6 @@
+.env
+.env.*
+.vercel
+node_modules
+dev-server.mjs
+sync-plugin.mjs

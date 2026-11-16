@@ -1,0 +1,122 @@
+:root {
+  --es-color-subcopy: #7997b8;
+  --es-color-80: #99caff;
+  --es-color-100: #0a7dfa;
+  --es-color-200: #033162;
+  --es-color-300: #001d3c;
+  --es-color-standard-surface: #edeef0;
+  --es-color-white: #ffffff;
+  --es-color-grey-100: #f8f9fa;
+  --es-color-grey-200: #e9ecef;
+  --es-color-grey-300: #dee2e6;
+  --es-color-grey-400: #ced4da;
+  --es-color-media-rich-black: #181818;
+  --es-color-black-900: #000000;
+  --es-color-yellow: #ffe600;
+  --es-color-gold: #fcd53d;
+  --es-color-navy: #002145;
+  --es-color-brand-purple: #491066;
+  --es-color-link: #4579ae;
+  --es-color-timestamp: #7ea2c8;
+  --es-color-tag-border: #aad1fa;
+  --es-color-tag-text: #112841;
+
+  --es-font-display: var(--acumin-pro-condensed-black);
+  --es-font-body: var(--roboto-condensed);
+  --es-font-meta: var(--roboto-condensed);
+  --es-weight-black: 900;
+
+  --es-text-display-0: 98px;
+  --es-lh-display-0: 74px;
+  --es-ls-display-0: -2.94px;
+  --es-text-display-1: 78px;
+  --es-lh-display-1: 61px;
+  --es-ls-display-1: -2.34px;
+  --es-text-display-2: 68px;
+  --es-lh-display-2: 55px;
+  --es-ls-display-2: -2.04px;
+  --es-text-display-3: 58px;
+  --es-lh-display-3: 80px;
+  --es-ls-display-3: -1.74px;
+  --es-text-h1: 48px;
+  --es-lh-h1: 48px;
+  --es-ls-h1: -1.44px;
+  --es-text-h2: 38px;
+  --es-lh-h2: 40px;
+  --es-ls-h2: -1.14px;
+  --es-text-h3: 35px;
+  --es-lh-h3: 36px;
+  --es-ls-h3: -1.05px;
+  --es-text-h4: 28px;
+  --es-lh-h4: 32px;
+  --es-ls-h4: 0px;
+  --es-text-h5: 24px;
+  --es-lh-h5: 28px;
+  --es-ls-h5: -0.24px;
+  --es-text-h6: 20px;
+  --es-lh-h6: 24px;
+  --es-ls-h6: 0px;
+  --es-text-body: 16px;
+  --es-lh-body: 24px;
+  --es-ls-body: -0.16px;
+  --es-text-body-sm: 14px;
+  --es-lh-body-sm: 20px;
+  --es-ls-body-sm: -0.14px;
+  --es-text-caption: 12px;
+  --es-lh-caption: 16px;
+  --es-ls-caption: -0.12px;
+
+  --es-space-1: 1px;
+  --es-space-2: 2px;
+  --es-space-4: 4px;
+  --es-space-6: 6px;
+  --es-space-8: 8px;
+  --es-space-10: 10px;
+  --es-space-12: 12px;
+  --es-space-16: 16px;
+  --es-space-20: 20px;
+  --es-space-24: 24px;
+  --es-space-32: 32px;
+  --es-space-40: 40px;
+  --es-space-48: 48px;
+  --es-space-56: 56px;
+  --es-space-64: 64px;
+  --es-space-80: 80px;
+  --es-space-96: 96px;
+
+  --es-radius-xs: 3px;
+  --es-radius-sm: 8px;
+  --es-radius-md: 12px;
+  --es-radius-lg: 24px;
+  --es-radius-pill: 9999px;
+  --es-radius-circle: 50%;
+
+  --es-shadow-hero: 0px 4px 32px rgba(0,0,0,0.65);
+  --es-shadow-card: 0 2px 8px rgba(0,0,0,0.08);
+  --es-shadow-dropdown: 0 4px 16px rgba(0,0,0,0.12);
+
+  --es-duration-fast: 150ms;
+  --es-duration-base: 250ms;
+  --es-duration-slow: 400ms;
+  --es-easing-default: cubic-bezier(0.4,0,0.2,1);
+  --es-easing-spring: cubic-bezier(0.34,1.56,0.64,1);
+
+  --es-container-max: 1400px;
+  --es-container-page: 1440px;
+  --es-section-pad-x: 28px;
+  --es-section-pad-y: 38px;
+  --es-section-pad-x-hero: 85px;
+  --es-section-pad-y-hero: 48px;
+  --es-gap-card: 16px;
+  --es-gap-section: 20px;
+}
+
+[data-theme="dark"] {
+  --es-color-white: #181818;
+  --es-color-black-900: #ffffff;
+  --es-color-standard-surface: #1a1a1a;
+  --es-color-grey-100: #2a2a2a;
+  --es-color-grey-200: #333333;
+  --es-color-grey-300: #444444;
+  --es-color-grey-400: #555555;
+}
