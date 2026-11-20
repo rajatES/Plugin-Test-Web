@@ -468,48 +468,176 @@
         request('log_insert', { job_id: state.job, addon_id: parts[parts.length - 1], template: 'suggestion:' + kind }).catch(function () { return null; });
     }
 
+    function decodeEntity(ent) {
+        var t = document.createElement('textarea');
+        t.innerHTML = ent;
+        return t.value;
+    }
+
+    function textMap(html) {
+        var text = '', from = [], to = [], i = 0;
+        while (i < html.length) {
+            var ch = html.charAt(i);
+            if (ch === '<') {
+                var j = html.indexOf('>', i);
+                if (j < 0) {
+                    break;
+                }
+                i = j + 1;
+                continue;
+            }
+            if (ch === '&') {
+                var m = /^&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/i.exec(html.slice(i, i + 12));
+                if (m) {
+                    var d = decodeEntity(m[0]);
+                    for (var k = 0; k < d.length; k++) {
+                        text += d.charAt(k);
+                        from.push(i);
+                        to.push(i + m[0].length);
+                    }
+                    i += m[0].length;
+                    continue;
+                }
+            }
+            text += ch;
+            from.push(i);
+            to.push(i + 1);
+            i++;
+        }
+        return { text: text, from: from, to: to };
+    }
+
+    function wordsOf(text) {
+        var out = [], re = /[A-Za-z0-9]+(?:['’.\-][A-Za-z0-9]+)*/g, m;
+        while ((m = re.exec(text))) {
+            out.push({ w: m[0].toLowerCase().replace(/’/g, "'"), s: m.index, e: m.index + m[0].length });
+        }
+        return out;
+    }
+
+    function common(a, b) {
+        var count = {}, n = 0;
+        a.forEach(function (w) { count[w] = (count[w] || 0) + 1; });
+        b.forEach(function (w) {
+            if (count[w]) {
+                count[w]--;
+                n++;
+            }
+        });
+        return n;
+    }
+
+    var SMALL_WORDS = ['a', 'an', 'the', 'of', 'to', 'in', 'on', 'at', 'for', 'and', 'or', 'but', 'is', 'are', 'was', 'were',
+        'has', 'have', 'had', 'be', 'been', 'with', 'by', 'as', 'that', 'this', 'it', 'its', 'his', 'her', 'their', 'so'];
+
+    function closestSpan(text, find, minRecall) {
+        var tw = wordsOf(text), qw = wordsOf(find).map(function (x) { return x.w; });
+        var key = qw.filter(function (w) { return SMALL_WORDS.indexOf(w) < 0; });
+        if (!qw.length || !tw.length || !key.length) {
+            return null;
+        }
+        var best = null;
+        for (var len = Math.max(1, qw.length - 2); len <= qw.length * 2 + 1; len++) {
+            for (var i = 0; i + len <= tw.length; i++) {
+                var win = tw.slice(i, i + len).map(function (x) { return x.w; });
+                if (win[0] !== qw[0] && win[len - 1] !== qw[qw.length - 1] && qw.indexOf(win[0]) < 0) {
+                    continue;
+                }
+                if (key.some(function (w) { return win.indexOf(w) < 0; })) {
+                    continue;
+                }
+                var n = common(win, qw);
+                var recall = n / qw.length, precision = n / len;
+                if (recall < minRecall || precision < 0.5) {
+                    continue;
+                }
+                if (!best || recall > best.recall || (recall === best.recall && precision > best.precision)) {
+                    best = { recall: recall, precision: precision, s: tw[i].s, e: tw[i + len - 1].e };
+                }
+            }
+        }
+        return best;
+    }
+
+    function balanced(fragment) {
+        var opens = (fragment.match(/<[a-z][^>]*[^\/]>|<[a-z]>/gi) || []).length;
+        var closes = (fragment.match(/<\/[a-z][^>]*>/gi) || []).length;
+        return opens === closes;
+    }
+
+    function findSpan(html, find, fuzzy) {
+        var map = textMap(html);
+        var m = looseRegex(find).exec(map.text);
+        var span = m ? { s: m.index, e: m.index + m[0].length, exact: true } : null;
+        if (!span && fuzzy) {
+            var c = closestSpan(map.text, find, fuzzy);
+            span = c ? { s: c.s, e: c.e, exact: false } : null;
+        }
+        if (!span || span.e <= span.s) {
+            return null;
+        }
+        var a = map.from[span.s], b = map.to[span.e - 1];
+        if (!balanced(html.slice(a, b))) {
+            return null;
+        }
+        return { a: a, b: b, exact: span.exact, found: map.text.slice(span.s, span.e) };
+    }
+
+    function spliced(html, span, replacement) {
+        return html.slice(0, span.a) + esc(replacement) + html.slice(span.b);
+    }
+
     function replaceText(find, replacement, blockIndex, btn, msg, key, kind) {
-        var re = looseRegex(find);
+        var done = function (span) {
+            markDone(key, btn, msg, span.exact ? 'Replaced in the article.' : 'The words had changed, so the closest match was replaced: “' + span.found + '”. Undo if that’s wrong.', kind);
+        };
         if (hasBlockEditor()) {
             var blocks = wp.data.select('core/block-editor').getBlocks();
-            var order = [findIndex(find, blockIndex)];
+            var first = findIndex(find, blockIndex);
+            var order = [first];
             for (var i = 0; i < blocks.length; i++) {
                 if (order.indexOf(i) < 0) {
                     order.push(i);
                 }
             }
-            for (var k = 0; k < order.length; k++) {
-                var b = blocks[order[k]];
-                var html = blockHtml(b);
-                html = html === null ? null : decodePunct(html);
-                if (html && re.test(html)) {
-                    wp.data.dispatch('core/block-editor').updateBlockAttributes(b.clientId, { content: html.replace(re, esc(replacement)) });
-                    wp.data.dispatch('core/block-editor').selectBlock(b.clientId);
-                    scrollToBlock(b.clientId);
-                    markDone(key, btn, msg, 'Replaced in the article.', kind);
-                    return;
+            var near = [first, first - 1, first + 1].filter(function (x) { return x >= 0 && x < blocks.length; });
+            var passes = [{ list: order, fuzzy: 0 }, { list: near, fuzzy: 0.8 }];
+            for (var p = 0; p < passes.length; p++) {
+                for (var k = 0; k < passes[p].list.length; k++) {
+                    var b = blocks[passes[p].list[k]];
+                    var html = blockHtml(b);
+                    if (!html) {
+                        continue;
+                    }
+                    html = decodePunct(html);
+                    var span = findSpan(html, find, passes[p].fuzzy);
+                    if (span) {
+                        wp.data.dispatch('core/block-editor').updateBlockAttributes(b.clientId, { content: spliced(html, span, replacement) });
+                        wp.data.dispatch('core/block-editor').selectBlock(b.clientId);
+                        scrollToBlock(b.clientId);
+                        done(span);
+                        return;
+                    }
                 }
             }
-            showMsg(msg, 'Couldn’t find those exact words in the article; they may have been edited. Use Copy instead.', 'error');
+            showMsg(msg, 'Those words are no longer in the article. Use Copy instead.', 'error');
             return;
         }
-        if (window.tinymce && tinymce.get('content') && !tinymce.get('content').isHidden()) {
-            var ed = tinymce.get('content');
-            var content = decodePunct(ed.getContent());
-            if (re.test(content)) {
-                ed.setContent(content.replace(re, esc(replacement)));
-                markDone(key, btn, msg, 'Replaced in the article.', kind);
-                return;
+        var classic = window.tinymce && tinymce.get('content') && !tinymce.get('content').isHidden() ? tinymce.get('content') : null;
+        var ta = classic ? null : document.getElementById('content');
+        var content = classic ? decodePunct(classic.getContent()) : (ta ? decodePunct(ta.value) : '');
+        var spanC = content ? (findSpan(content, find, 0) || findSpan(content, find, 0.9)) : null;
+        if (spanC) {
+            var out = spliced(content, spanC, replacement);
+            if (classic) {
+                classic.setContent(out);
+            } else {
+                ta.value = out;
             }
-        } else {
-            var ta = document.getElementById('content');
-            if (ta && re.test(decodePunct(ta.value))) {
-                ta.value = decodePunct(ta.value).replace(re, esc(replacement));
-                markDone(key, btn, msg, 'Replaced in the article.', kind);
-                return;
-            }
+            done(spanC);
+            return;
         }
-        showMsg(msg, 'Couldn’t find those exact words in the article; they may have been edited. Use Copy instead.', 'error');
+        showMsg(msg, 'Those words are no longer in the article. Use Copy instead.', 'error');
     }
 
     function applySuggestion(s, btn, msg) {
