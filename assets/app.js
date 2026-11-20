@@ -1008,8 +1008,12 @@
   function installShim() {
     window.wp = {
       blocks: {
-        createBlock: function (name, attrs) {
-          var b = mk(name, normalizeAttrs(name, attrs || {}));
+        createBlock: function (name, attrs, inner) {
+          var a = attrs || {};
+          if (name === 'core/list' && Array.isArray(inner)) {
+            a = { ordered: !!a.ordered, values: inner.map(function (li) { return '<li>' + ((li.attributes || {}).content || '') + '</li>'; }).join('') };
+          }
+          var b = mk(name, normalizeAttrs(name, a));
           b.isNew = true;
           return b;
         },
@@ -1049,7 +1053,23 @@
               select(list[0].clientId);
               scheduleSave();
             },
-            selectBlock: function (id) { select(id); }
+            selectBlock: function (id) { select(id); },
+            updateBlockAttributes: function (id, attrs) {
+              var i = indexOf(id);
+              if (i < 0) {
+                return;
+              }
+              pushHistory();
+              var b = doc.blocks[i];
+              Object.keys(attrs || {}).forEach(function (k) {
+                var key = k === 'content' && b.name === 'core/quote' ? 'value' : k;
+                b.attributes[key] = k === 'content' ? cleanInline(attrs[k]) : attrs[k];
+              });
+              b.isNew = true;
+              renderBlocks();
+              select(id);
+              scheduleSave();
+            }
           };
         }
       }

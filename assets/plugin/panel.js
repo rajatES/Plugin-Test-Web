@@ -249,6 +249,13 @@
         if (checks) {
             resultsEl.appendChild(checks);
         }
+        var sugg = suggestionsSection(r.suggestions || []);
+        if (sugg) {
+            resultsEl.appendChild(sugg);
+        }
+        if (addons.length) {
+            resultsEl.appendChild(h('p', { class: 'se-section-title', text: 'Graphics' }));
+        }
         if (!addons.length) {
             resultsEl.appendChild(h('p', { class: 'se-empty', text: r.skipped_reason || 'No add-ons were good enough to suggest for this draft.' }));
         }
@@ -277,7 +284,9 @@
     function summary(r, suggested, extra) {
         var bits = [];
         bits.push(h('span', { class: 'se-pill', text: (r.league || '').toUpperCase() || 'STATS' }));
-        bits.push(h('span', { class: 'se-sum-text', text: suggested.length + ' suggested' + (extra.length ? ', ' + extra.length + ' more' : '') }));
+        var edits = (r.suggestions || []).length;
+        bits.push(h('span', { class: 'se-sum-text', text: suggested.length + (suggested.length === 1 ? ' graphic' : ' graphics')
+            + (extra.length ? ', ' + extra.length + ' more' : '') + (edits ? ' · ' + edits + (edits === 1 ? ' writing suggestion' : ' writing suggestions') : '') }));
         var notes = [];
         if (r.placement && r.placement.early_hook === false && suggested.length) {
             notes.push('None of the suggestions lands in the first quarter of the article, where most readers leave. Consider moving one up.');
@@ -303,20 +312,248 @@
                 h('span', { text: matches.length + ' of ' + checks.length + ' match MySportsFeeds' })
             ])
         ]);
-        mismatches.forEach(function (c) {
+        mismatches.forEach(function (c, ci) {
+            var msg = h('p', { class: 'se-msg', hidden: true });
+            var fixKey = state.job + ':fix-' + ci;
             box.appendChild(h('div', { class: 'se-check' }, [
                 h('p', { class: 'se-quote', text: '“' + c.quote + '”' }),
                 h('p', { class: 'se-check-values' }, [
                     'Article: ', h('strong', { text: c.article_value }),
                     ' · MySportsFeeds: ', h('strong', { text: c.data_value || '-' })
                 ]),
+                c.fix_text ? h('div', { class: 'se-actions' }, [
+                    h('button', {
+                        type: 'button', class: 'se-btn se-btn-primary',
+                        text: used[fixKey] ? 'Fixed ✓' : 'Replace with “' + c.fix_text + '”',
+                        onclick: function (ev) {
+                            replaceText(c.quote, c.fix_text, c.block, ev.target, msg, fixKey, 'fix');
+                        }
+                    }),
+                    h('button', { type: 'button', class: 'se-btn', text: 'Copy', onclick: function (ev) { copyText(c.fix_text, ev.target); } })
+                ]) : null,
                 hasBlockEditor() ? h('button', {
                     type: 'button', class: 'se-link', text: 'Find in the article',
                     onclick: function () { jumpTo(c.quote, c.block); }
-                }) : null
+                }) : null,
+                msg
             ]));
         });
         return box;
+    }
+
+    var SUGGEST_LABELS = { add: 'Add a stat', sharpen: 'Sharpen a claim', box: 'Key stats box' };
+
+    function suggestionsSection(list) {
+        var gone = dismissed();
+        var shown = (list || []).filter(function (s) { return gone.indexOf(s.id) < 0; });
+        if (!shown.length) {
+            return null;
+        }
+        return h('div', { class: 'se-suggest' }, [
+            h('div', { class: 'se-suggest-head' }, [
+                h('strong', { text: 'Writing suggestions' }),
+                h('span', { text: shown.length + (shown.length === 1 ? ' edit' : ' edits') + ' backed by the data' })
+            ]),
+            h('div', { class: 'se-suggest-list' }, shown.map(suggestionCard))
+        ]);
+    }
+
+    function suggestionCard(s) {
+        var key = state.job + ':' + s.id;
+        var done = !!used[key];
+        var msg = h('p', { class: 'se-msg', hidden: true });
+        var body;
+        if (s.type === 'sharpen') {
+            body = h('div', { class: 'se-sg-body' }, [
+                h('p', { class: 'se-sg-old' }, [h('span', { class: 'se-sg-tag', text: 'Instead of' }), '“' + s.quote + '”']),
+                h('p', { class: 'se-sg-new' }, [h('span', { class: 'se-sg-tag', text: 'Write' }), s.text])
+            ]);
+        } else if (s.type === 'box') {
+            body = h('div', { class: 'se-sg-body se-sg-box' }, [
+                h('p', { class: 'se-sg-box-title', text: s.title }),
+                h('ul', {}, (s.items || []).map(function (t) { return h('li', { text: t }); }))
+            ]);
+        } else {
+            body = h('div', { class: 'se-sg-body' }, [h('p', { class: 'se-sg-new', text: s.text })]);
+        }
+        var primary = s.type === 'sharpen' ? 'Replace in article' : (hasBlockEditor() ? 'Insert after paragraph' : 'Insert at cursor');
+        var actions = h('div', { class: 'se-actions' }, [
+            h('button', {
+                type: 'button', class: 'se-btn se-btn-primary', text: done ? 'Done ✓ Use again' : primary,
+                onclick: function (ev) { applySuggestion(s, ev.target, msg); }
+            }),
+            h('button', { type: 'button', class: 'se-btn', text: 'Copy', onclick: function (ev) { copyText(s.text, ev.target); } }),
+            h('button', {
+                type: 'button', class: 'se-link', text: 'Dismiss',
+                onclick: function () {
+                    var d = dismissed();
+                    d.push(s.id);
+                    storageSet('se-dismissed-' + state.job, d);
+                    render();
+                }
+            })
+        ]);
+        return h('div', { class: 'se-sg' + (done ? ' se-card-used' : ''), 'data-sugg': s.id }, [
+            h('div', { class: 'se-card-head' }, [
+                h('span', { class: 'se-pill', text: SUGGEST_LABELS[s.type] || s.label || 'Suggestion' }),
+                s.anchor ? h('button', {
+                    type: 'button', class: 'se-where', title: 'Show this spot in the article',
+                    onclick: function () { jumpTo(s.quote || s.anchor, s.block); }
+                }, [(s.type === 'sharpen' ? 'In: “' : 'After: “') + s.anchor.slice(0, 70) + (s.anchor.length > 70 ? '…' : '') + '”']) : null
+            ]),
+            body,
+            s.why ? h('p', { class: 'se-why', text: s.why }) : null,
+            actions,
+            msg
+        ]);
+    }
+
+    var NAMED_PUNCT = { rsquo: '’', lsquo: '‘', ldquo: '“', rdquo: '”', ndash: '–', mdash: '—', apos: "'", nbsp: ' ' };
+    var CODE_PUNCT = [39, 160, 8211, 8212, 8216, 8217, 8220, 8221];
+
+    function decodePunct(html) {
+        return String(html).replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi, function (m, e) {
+            if (e.charAt(0) === '#') {
+                var hex = e.charAt(1) === 'x' || e.charAt(1) === 'X';
+                var code = hex ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+                return CODE_PUNCT.indexOf(code) >= 0 ? String.fromCharCode(code) : m;
+            }
+            var named = NAMED_PUNCT[e.toLowerCase()];
+            return named !== undefined ? named : m;
+        });
+    }
+
+    function looseRegex(find) {
+        var src = '';
+        var lastSpace = false;
+        String(find).trim().split('').forEach(function (ch) {
+            var space = /\s/.test(ch);
+            if (space) {
+                if (!lastSpace) {
+                    src += '[\\s\\u00a0]+';
+                }
+            } else if (/['’‘]/.test(ch)) {
+                src += "['’‘]";
+            } else if (/["“”]/.test(ch)) {
+                src += '["“”]';
+            } else if (/[–—-]/.test(ch)) {
+                src += '[-–—]';
+            } else if (ch === '&') {
+                src += '(?:&|&amp;)';
+            } else {
+                src += ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            }
+            lastSpace = space;
+        });
+        return new RegExp(src);
+    }
+
+    function blockHtml(b) {
+        var c = b && b.attributes ? b.attributes.content : null;
+        if (c === null || c === undefined) {
+            return null;
+        }
+        if (typeof c === 'string') {
+            return c;
+        }
+        return typeof c.toHTMLString === 'function' ? c.toHTMLString() : String(c);
+    }
+
+    function markDone(key, btn, msg, text, kind) {
+        used[key] = true;
+        btn.disabled = false;
+        btn.textContent = kind === 'fix' ? 'Fixed ✓' : 'Done ✓ Use again';
+        showMsg(msg, text, 'ok');
+        var parts = key.split(':');
+        request('log_insert', { job_id: state.job, addon_id: parts[parts.length - 1], template: 'suggestion:' + kind }).catch(function () { return null; });
+    }
+
+    function replaceText(find, replacement, blockIndex, btn, msg, key, kind) {
+        var re = looseRegex(find);
+        if (hasBlockEditor()) {
+            var blocks = wp.data.select('core/block-editor').getBlocks();
+            var order = [findIndex(find, blockIndex)];
+            for (var i = 0; i < blocks.length; i++) {
+                if (order.indexOf(i) < 0) {
+                    order.push(i);
+                }
+            }
+            for (var k = 0; k < order.length; k++) {
+                var b = blocks[order[k]];
+                var html = blockHtml(b);
+                html = html === null ? null : decodePunct(html);
+                if (html && re.test(html)) {
+                    wp.data.dispatch('core/block-editor').updateBlockAttributes(b.clientId, { content: html.replace(re, esc(replacement)) });
+                    wp.data.dispatch('core/block-editor').selectBlock(b.clientId);
+                    scrollToBlock(b.clientId);
+                    markDone(key, btn, msg, 'Replaced in the article.', kind);
+                    return;
+                }
+            }
+            showMsg(msg, 'Couldn’t find those exact words in the article; they may have been edited. Use Copy instead.', 'error');
+            return;
+        }
+        if (window.tinymce && tinymce.get('content') && !tinymce.get('content').isHidden()) {
+            var ed = tinymce.get('content');
+            var content = decodePunct(ed.getContent());
+            if (re.test(content)) {
+                ed.setContent(content.replace(re, esc(replacement)));
+                markDone(key, btn, msg, 'Replaced in the article.', kind);
+                return;
+            }
+        } else {
+            var ta = document.getElementById('content');
+            if (ta && re.test(decodePunct(ta.value))) {
+                ta.value = decodePunct(ta.value).replace(re, esc(replacement));
+                markDone(key, btn, msg, 'Replaced in the article.', kind);
+                return;
+            }
+        }
+        showMsg(msg, 'Couldn’t find those exact words in the article; they may have been edited. Use Copy instead.', 'error');
+    }
+
+    function applySuggestion(s, btn, msg) {
+        var key = state.job + ':' + s.id;
+        if (s.type === 'sharpen') {
+            replaceText(s.quote, s.text, s.block, btn, msg, key, s.type);
+            return;
+        }
+        if (!hasBlockEditor()) {
+            if (classicInsert(s.html || esc(s.text))) {
+                markDone(key, btn, msg, 'Inserted at the cursor.', s.type);
+            } else {
+                showMsg(msg, 'Couldn’t reach the editor. Use Copy instead.', 'error');
+            }
+            return;
+        }
+        var newBlocks;
+        if (s.type === 'box') {
+            newBlocks = [
+                wp.blocks.createBlock('core/paragraph', { content: '<strong>' + esc(s.title) + '</strong>' }),
+                wp.blocks.createBlock('core/list', {}, (s.items_html || []).map(function (li) {
+                    return wp.blocks.createBlock('core/list-item', { content: li });
+                }))
+            ];
+        } else {
+            newBlocks = [wp.blocks.createBlock('core/paragraph', { content: s.html || esc(s.text) })];
+        }
+        var index = findIndex(s.anchor, s.block);
+        wp.data.dispatch('core/block-editor').insertBlocks(newBlocks, index + 1, undefined, true);
+        window.setTimeout(function () { scrollToBlock(newBlocks[0].clientId); }, 150);
+        markDone(key, btn, msg, 'Inserted after the paragraph.', s.type);
+    }
+
+    function copyText(text, btn) {
+        var done = function () {
+            var old = btn.textContent;
+            btn.textContent = 'Copied';
+            window.setTimeout(function () { btn.textContent = old; }, 1500);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done).catch(function () { window.prompt('Copy the text:', text); });
+        } else {
+            window.prompt('Copy the text:', text);
+        }
     }
 
     function sourceLine(a) {
