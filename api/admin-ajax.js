@@ -85,6 +85,7 @@ export async function POST(request) {
         post_id: `test-${postId}`,
         site: "stats-enhancer-test-site",
         user: who,
+        focus: String(form.get("focus") || "").slice(0, 400),
         fresh: Boolean(form.get("fresh")),
       }, 30000);
       if (!r.job_id) {
@@ -127,6 +128,24 @@ export async function POST(request) {
       }
       log("insert", { tester: who, job: jobId, addon: addonId, template: addon.template });
       return ok({ id: Date.now() % 1000000, url: img.url, full: img.url, width: img.width || null, height: img.height || null });
+    }
+    if (action === "revise" || action === "more" || action === "undo" || action === "task") {
+      if (!jobId) {
+        return fail("No job.");
+      }
+      const payload = { job_id: jobId };
+      if (action === "revise" || action === "undo") {
+        payload.addon_id = addonId;
+      }
+      if (action === "revise" || action === "more") {
+        payload.request = String(form.get("request") || "").slice(0, 400);
+        payload.user = who;
+        log(action, { tester: who, job: jobId, addon: addonId, request: payload.request });
+      }
+      if (action === "task") {
+        payload.task_id = String(form.get("task_id") || "").slice(0, 40);
+      }
+      return ok(await call(action, payload, 30000));
     }
     if (action === "log_insert") {
       log("insert", { tester: who, job: jobId, addon: addonId, template: String(form.get("template") || "") });

@@ -10,7 +10,7 @@
     var runBtn = document.getElementById('se-run');
     var statusEl = document.getElementById('se-status');
     var resultsEl = document.getElementById('se-results');
-    var state = { job: S.jobId || '', result: null, polling: false, startedAt: 0 };
+    var state = { job: S.jobId || '', result: null, polling: false, startedAt: 0, task: false };
     var used = {};
     (S.used || []).forEach(function (u) {
         if (u && u.job_id && u.addon_id) {
@@ -183,6 +183,7 @@
             content: data.content,
             categories: data.categories,
             tags: data.tags,
+            focus: focusEl ? focusEl.value.trim() : '',
             fresh: fresh ? '1' : ''
         }).then(function (r) {
             state.job = r.job_id;
@@ -224,6 +225,61 @@
         });
     }
 
+    var SECTIONS = {
+        fix: { title: 'Figures to fix', hint: 'Numbers in your draft that the data disagrees with' },
+        writing: { title: 'Writing suggestions', hint: 'Sentences backed by the data, ready to drop into the text' },
+        graphic: { title: 'Graphics', hint: 'Full-size infographics for the main points of the story' },
+        widget: { title: 'Widgets', hint: 'Small stat strips that sit right after one sentence' },
+        table: { title: 'Tables', hint: 'Stats tables for readers who want the detail' }
+    };
+
+    var TYPE_NAMES = {
+        graphic: ['graphic', 'graphics'],
+        widget: ['widget', 'widgets'],
+        table: ['table', 'tables'],
+        writing: ['writing suggestion', 'writing suggestions'],
+        fix: ['figure to fix', 'figures to fix']
+    };
+
+    function typeOf(a) {
+        if (a.kind === 'table') {
+            return 'table';
+        }
+        return a.size === 'widget' ? 'widget' : 'graphic';
+    }
+
+    function plural(key, n) {
+        return n + ' ' + TYPE_NAMES[key][n === 1 ? 0 : 1];
+    }
+
+    function openState() {
+        return storageGet('se-open') || {};
+    }
+
+    function section(key, count, sub, children) {
+        var meta = SECTIONS[key];
+        var saved = openState();
+        var el = h('details', { class: 'se-section se-section-' + key, id: 'se-section-' + key, open: saved[key] === false ? null : true }, [
+            h('summary', { class: 'se-section-head' }, [
+                h('span', { class: 'se-section-name', text: meta.title }),
+                h('span', { class: 'se-count', text: String(count) }),
+                h('span', { class: 'se-section-sub', text: sub || meta.hint })
+            ]),
+            h('div', { class: 'se-section-body' }, children)
+        ]);
+        el.addEventListener('toggle', function () {
+            var o = openState();
+            o[key] = el.open;
+            storageSet('se-open', o);
+        });
+        return el;
+    }
+
+    function liveAddons(r) {
+        var gone = dismissed();
+        return (r.addons || []).filter(function (a) { return !a.replaced_by && gone.indexOf(a.id) < 0; });
+    }
+
     function render() {
         var r = state.result;
         resultsEl.innerHTML = '';
@@ -240,11 +296,8 @@
         }
         setStatus('');
         var gone = dismissed();
-        var addons = (r.addons || []).filter(function (a) { return gone.indexOf(a.id) < 0; });
-        var suggested = addons.filter(function (a) { return a.tier === 'suggested'; });
-        var extra = addons.filter(function (a) { return a.tier !== 'suggested'; });
-
-        resultsEl.appendChild(summary(r, suggested, extra));
+        var live = liveAddons(r);
+        resultsEl.appendChild(summary(r, live));
         var checks = checksSection(r.checks || []);
         if (checks) {
             resultsEl.appendChild(checks);
@@ -253,21 +306,29 @@
         if (sugg) {
             resultsEl.appendChild(sugg);
         }
-        if (addons.length) {
-            resultsEl.appendChild(h('p', { class: 'se-section-title', text: 'Graphics' }));
+        ['graphic', 'widget', 'table'].forEach(function (key) {
+            var items = live.filter(function (a) { return typeOf(a) === key; });
+            if (!items.length) {
+                return;
+            }
+            var main = items.filter(function (a) { return a.tier === 'suggested'; });
+            var extra = items.filter(function (a) { return a.tier !== 'suggested'; });
+            var kids = [];
+            if (main.length) {
+                kids.push(h('div', { class: 'se-cards' }, main.map(card)));
+            }
+            if (extra.length) {
+                kids.push(h('details', { class: 'se-more', open: main.length ? null : true }, [
+                    h('summary', { text: 'Also possible (' + extra.length + '): these sit close to another add-on' }),
+                    h('div', { class: 'se-cards' }, extra.map(card))
+                ]));
+            }
+            resultsEl.appendChild(section(key, items.length, null, kids));
+        });
+        if (!live.length) {
+            resultsEl.appendChild(h('p', { class: 'se-empty', text: r.skipped_reason || 'No graphics were good enough to suggest for this draft. Ask for one below.' }));
         }
-        if (!addons.length) {
-            resultsEl.appendChild(h('p', { class: 'se-empty', text: r.skipped_reason || 'No add-ons were good enough to suggest for this draft.' }));
-        }
-        var list = h('div', { class: 'se-cards' }, suggested.map(card));
-        resultsEl.appendChild(list);
-        if (extra.length) {
-            var more = h('details', { class: 'se-more' }, [
-                h('summary', { text: 'More options (' + extra.length + '): these sit close to another add-on' }),
-                h('div', { class: 'se-cards' }, extra.map(card))
-            ]);
-            resultsEl.appendChild(more);
-        }
+        resultsEl.appendChild(askBox());
         if (gone.length) {
             resultsEl.appendChild(h('button', {
                 type: 'button', class: 'se-link', text: 'Show dismissed (' + gone.length + ')',
@@ -281,21 +342,51 @@
         ]));
     }
 
-    function summary(r, suggested, extra) {
-        var bits = [];
-        bits.push(h('span', { class: 'se-pill', text: (r.league || '').toUpperCase() || 'STATS' }));
-        var edits = (r.suggestions || []).length;
-        bits.push(h('span', { class: 'se-sum-text', text: suggested.length + (suggested.length === 1 ? ' graphic' : ' graphics')
-            + (extra.length ? ', ' + extra.length + ' more' : '') + (edits ? ' · ' + edits + (edits === 1 ? ' writing suggestion' : ' writing suggestions') : '') }));
+    function jumpChip(key, n) {
+        return h('button', {
+            type: 'button', class: 'se-sum-chip se-sum-chip-' + key, text: plural(key, n),
+            onclick: function () {
+                var el = document.getElementById('se-section-' + key);
+                if (el) {
+                    el.open = true;
+                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }
+        });
+    }
+
+    function summary(r, live) {
+        var gone = dismissed();
+        var counts = {
+            fix: (r.checks || []).filter(function (c) { return c.status === 'mismatch'; }).length,
+            writing: (r.suggestions || []).filter(function (s) { return gone.indexOf(s.id) < 0; }).length,
+            graphic: live.filter(function (a) { return typeOf(a) === 'graphic'; }).length,
+            widget: live.filter(function (a) { return typeOf(a) === 'widget'; }).length,
+            table: live.filter(function (a) { return typeOf(a) === 'table'; }).length
+        };
+        var chips = ['fix', 'writing', 'graphic', 'widget', 'table'].filter(function (k) { return counts[k]; })
+            .map(function (k) { return jumpChip(k, counts[k]); });
+        var lines = [];
+        if (r.angle) {
+            lines.push(h('p', { class: 'se-sum-line' }, [h('strong', { text: 'Angle: ' }), r.angle]));
+        }
+        if (r.focus) {
+            lines.push(h('p', { class: 'se-sum-line' }, [h('strong', { text: 'Your focus: ' }), r.focus]));
+        }
+        var checked = (r.checks || []).length;
+        if (checked && !counts.fix) {
+            lines.push(h('p', { class: 'se-sum-line', text: checked === 1 ? 'The figure checked in your draft matches the data.' : 'All ' + checked + ' figures checked in your draft match the data.' }));
+        }
         var notes = [];
-        if (r.placement && r.placement.early_hook === false && suggested.length) {
-            notes.push('None of the suggestions lands in the first quarter of the article, where most readers leave. Consider moving one up.');
+        if (r.placement && r.placement.early_hook === false && live.some(function (a) { return a.tier === 'suggested'; })) {
+            notes.push('None of the add-ons lands in the first quarter of the article, where most readers leave. Consider moving one up.');
         }
         if (r.display_font === 'stand-in') {
             notes.push('Graphics use a stand-in headline font until the Acumin Pro Condensed Black file is added to the service.');
         }
         return h('div', { class: 'se-summary' }, [
-            h('div', { class: 'se-sum-row' }, bits),
+            h('div', { class: 'se-sum-row' }, [h('span', { class: 'se-pill', text: (r.league || '').toUpperCase() || 'STATS' })].concat(chips)),
+            lines.length ? h('div', { class: 'se-sum-lines' }, lines) : null,
             notes.length ? h('ul', { class: 'se-notes' }, notes.map(function (n) { return h('li', { text: n }); })) : null
         ]);
     }
@@ -303,23 +394,18 @@
     function checksSection(checks) {
         var mismatches = checks.filter(function (c) { return c.status === 'mismatch'; });
         var matches = checks.filter(function (c) { return c.status === 'match'; });
-        if (!checks.length) {
+        if (!mismatches.length) {
             return null;
         }
-        var box = h('div', { class: 'se-checks' + (mismatches.length ? ' se-checks-warn' : '') }, [
-            h('div', { class: 'se-checks-head' }, [
-                h('strong', { text: mismatches.length ? 'Check these figures' : 'Figures checked' }),
-                h('span', { text: matches.length + ' of ' + checks.length + ' match MySportsFeeds' })
-            ])
-        ]);
-        mismatches.forEach(function (c, ci) {
+        var items = mismatches.map(function (c, ci) {
             var msg = h('p', { class: 'se-msg', hidden: true });
             var fixKey = state.job + ':fix-' + ci;
-            box.appendChild(h('div', { class: 'se-check' }, [
+            return h('div', { class: 'se-check' }, [
+                h('div', { class: 'se-card-head' }, [h('span', { class: 'se-pill se-pill-fix', text: 'Figure to fix' })]),
                 h('p', { class: 'se-quote', text: '“' + c.quote + '”' }),
                 h('p', { class: 'se-check-values' }, [
-                    'Article: ', h('strong', { text: c.article_value }),
-                    ' · MySportsFeeds: ', h('strong', { text: c.data_value || '-' })
+                    'Your draft: ', h('strong', { text: c.article_value }),
+                    ' · The data: ', h('strong', { text: c.data_value || '-' })
                 ]),
                 c.fix_text ? h('div', { class: 'se-actions' }, [
                     h('button', {
@@ -336,9 +422,134 @@
                     onclick: function () { jumpTo(c.quote, c.block); }
                 }) : null,
                 msg
-            ]));
+            ]);
         });
-        return box;
+        return section('fix', mismatches.length, matches.length + ' of ' + checks.length + ' figures checked match the data',
+            [h('div', { class: 'se-check-list' }, items)]);
+    }
+
+    function taskBusy(msg) {
+        if (state.task) {
+            showMsg(msg, 'Another change is still being made. Wait for it to finish.', 'warn');
+            return true;
+        }
+        return false;
+    }
+
+    function showCardMsg(id, text, kind) {
+        var el = resultsEl.querySelector('[data-addon="' + id + '"]');
+        if (!el) {
+            return;
+        }
+        var m = el.querySelector('[data-role="card-msg"]');
+        if (m) {
+            showMsg(m, text, kind);
+        }
+        var sec = el.closest('details.se-section');
+        if (sec) {
+            sec.open = true;
+        }
+        var more = el.closest('details.se-more');
+        if (more) {
+            more.open = true;
+        }
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function runTask(action, data, btn, msg, onDone) {
+        if (taskBusy(msg)) {
+            return;
+        }
+        var started = Date.now();
+        var finish = function () {
+            state.task = false;
+            btn.disabled = false;
+            setBusy(false);
+        };
+        state.task = true;
+        btn.disabled = true;
+        runBtn.disabled = true;
+        showMsg(msg, 'Working on it…');
+        request(action, Object.assign({ job_id: state.job }, data)).then(function (r) {
+            var tick = function () {
+                request('task', { job_id: state.job, task_id: r.task_id }).then(function (t) {
+                    if (t.status === 'queued' || t.status === 'running') {
+                        showMsg(msg, 'Working on it… ' + Math.round((Date.now() - started) / 1000) + 's');
+                        if (Date.now() - started > 5 * 60 * 1000) {
+                            finish();
+                            showMsg(msg, 'This is taking much longer than usual. Try again in a minute.', 'error');
+                            return;
+                        }
+                        window.setTimeout(tick, 2500);
+                        return;
+                    }
+                    finish();
+                    if (t.status !== 'done' || !t.result) {
+                        showMsg(msg, t.error || 'The change could not be made.', 'error');
+                        return;
+                    }
+                    state.result = t.result;
+                    render();
+                    if (onDone) {
+                        onDone(t.addon_ids || []);
+                    }
+                }).catch(function (e) {
+                    finish();
+                    showMsg(msg, e.message, 'error');
+                });
+            };
+            tick();
+        }).catch(function (e) {
+            finish();
+            showMsg(msg, e.message, 'error');
+        });
+    }
+
+    function undoChange(a, btn, msg) {
+        if (taskBusy(msg)) {
+            return;
+        }
+        btn.disabled = true;
+        request('undo', { job_id: state.job, addon_id: a.id }).then(function (r) {
+            state.result = r.result;
+            render();
+            if (a.replaces) {
+                showCardMsg(a.replaces, 'Back to the earlier version.', 'ok');
+            }
+        }).catch(function (e) {
+            btn.disabled = false;
+            showMsg(msg, e.message, 'error');
+        });
+    }
+
+    function askBox() {
+        var msg = h('p', { class: 'se-msg', hidden: true });
+        var ta = h('textarea', {
+            rows: '2', class: 'se-input',
+            placeholder: 'e.g. “A graphic on the Cowboys’ penalties this season” or “Compare this team with the 2022 Cardinals: 1-3, 15.5 points a game”'
+        });
+        var btn = h('button', {
+            type: 'button', class: 'se-btn se-btn-primary', text: 'Make it',
+            onclick: function () {
+                var text = ta.value.trim();
+                if (!text) {
+                    showMsg(msg, 'Describe the graphic you want first.', 'warn');
+                    return;
+                }
+                runTask('more', { request: text }, btn, msg, function (ids) {
+                    if (ids.length) {
+                        showCardMsg(ids[0], 'Here is the graphic you asked for.', 'ok');
+                    }
+                });
+            }
+        });
+        return h('div', { class: 'se-ask' }, [
+            h('p', { class: 'se-ask-title', text: 'Ask for another graphic' }),
+            h('p', { class: 'se-ask-sub', text: 'Describe what you want: a stat, a span of games, a comparison. You can include your own figures (from a past season, say); graphics that use them are marked so you can double-check them.' }),
+            ta,
+            h('div', { class: 'se-actions' }, [btn]),
+            msg
+        ]);
     }
 
     var SUGGEST_LABELS = { add: 'Add a stat', sharpen: 'Sharpen a claim', box: 'Key stats box' };
@@ -349,13 +560,7 @@
         if (!shown.length) {
             return null;
         }
-        return h('div', { class: 'se-suggest' }, [
-            h('div', { class: 'se-suggest-head' }, [
-                h('strong', { text: 'Writing suggestions' }),
-                h('span', { text: shown.length + (shown.length === 1 ? ' edit' : ' edits') + ' backed by the data' })
-            ]),
-            h('div', { class: 'se-suggest-list' }, shown.map(suggestionCard))
-        ]);
+        return section('writing', shown.length, null, [h('div', { class: 'se-suggest-list' }, shown.map(suggestionCard))]);
     }
 
     function suggestionCard(s) {
@@ -395,7 +600,10 @@
         ]);
         return h('div', { class: 'se-sg' + (done ? ' se-card-used' : ''), 'data-sugg': s.id }, [
             h('div', { class: 'se-card-head' }, [
-                h('span', { class: 'se-pill', text: SUGGEST_LABELS[s.type] || s.label || 'Suggestion' }),
+                h('div', { class: 'se-card-type' }, [
+                    h('span', { class: 'se-pill se-pill-writing', text: 'writing' }),
+                    h('span', { class: 'se-type-label', text: SUGGEST_LABELS[s.type] || s.label || 'Suggestion' })
+                ]),
                 s.anchor ? h('button', {
                     type: 'button', class: 'se-where', title: 'Show this spot in the article',
                     onclick: function () { jumpTo(s.quote || s.anchor, s.block); }
@@ -729,12 +937,72 @@
         return f;
     }
 
+    function quickPicks(a) {
+        var nfl = (state.result && state.result.league) === 'nfl';
+        var games = ['Use only the last 3 games', 'Use the last 5 games', 'Show every game this season'];
+        var picks = {
+            series: games.concat(nfl ? ['Highlight Weeks … to …', 'Label each bar with the starting QB'] : ['Label each game with who was missing']),
+            form: ['Use the last 3 games', 'Use the last 8 games'],
+            split: ['Change the games on each side: …'],
+            stat: ['Use a more telling stat than the season total', 'Compare with the league average', 'Per game instead of the season total'],
+            rank: ['Per game instead of the season total', 'Rank all players, not one position', 'Use a more telling stat'],
+            versus: ['Per game instead of totals', 'Compare with last season instead', 'Use these stats: …'],
+            compare: ['Per game instead of totals', 'Add last season for comparison'],
+            key_numbers: ['Use more telling stats', 'Use these numbers: …'],
+            table: ['Only the last 5 games', 'Fewer columns: keep …'],
+            status: [],
+            context: []
+        };
+        return picks[a.recipe] || [];
+    }
+
+    function changeBox(a) {
+        var msg = h('p', { class: 'se-msg', hidden: true });
+        var ta = h('textarea', {
+            rows: '2', class: 'se-input',
+            placeholder: 'e.g. “Use Weeks 8 to 10 and label each bar with the starting QB”'
+        });
+        var chips = quickPicks(a).map(function (p) {
+            return h('button', {
+                type: 'button', class: 'se-chip', text: p,
+                onclick: function () {
+                    ta.value = p.replace('…', '').trim() + (p.indexOf('…') >= 0 ? ' ' : '');
+                    ta.focus();
+                }
+            });
+        });
+        var btn = h('button', {
+            type: 'button', class: 'se-btn se-btn-primary', text: 'Make this change',
+            onclick: function () {
+                var text = ta.value.trim();
+                if (!text) {
+                    showMsg(msg, 'Say what you want changed first.', 'warn');
+                    return;
+                }
+                runTask('revise', { addon_id: a.id, request: text }, btn, msg, function (ids) {
+                    if (ids.length) {
+                        showCardMsg(ids[0], 'Changed. Undo brings back the earlier version.', 'ok');
+                    }
+                });
+            }
+        });
+        return h('details', { class: 'se-change' }, [
+            h('summary', { text: 'Change this ' + (typeOf(a) === 'table' ? 'table' : typeOf(a) === 'widget' ? 'widget' : 'graphic') }),
+            h('p', { class: 'se-change-sub', text: 'Tell the tool what to change: the games, the stat, a comparison, labels. It redraws it from the same data with the same number checks, in about half a minute.' }),
+            chips.length ? h('div', { class: 'se-chips' }, chips) : null,
+            ta,
+            h('div', { class: 'se-actions' }, [btn]),
+            msg
+        ]);
+    }
+
     function card(a) {
         var key = state.job + ':' + a.id;
         var inserted = !!used[key];
-        var msg = h('p', { class: 'se-msg', hidden: true });
+        var msg = h('p', { class: 'se-msg', hidden: true, 'data-role': 'card-msg' });
         var inputs = {};
-        var editor = h('details', { class: 'se-edit' }, [h('summary', { text: 'Edit text' })]);
+        var type = typeOf(a);
+        var editor = h('details', { class: 'se-edit' }, [h('summary', { text: 'Edit the words' })]);
         fieldsFor(a).forEach(function (f) {
             var value = f[0] === 'caption' ? (a.caption || (a.text && a.text.caption) || '')
                 : f[0] === 'alt' ? (a.alt || (a.text && a.text.alt) || '')
@@ -778,18 +1046,37 @@
             })
         ]);
 
-        return h('div', { class: 'se-card' + (inserted ? ' se-card-used' : ''), 'data-addon': a.id }, [
+        var badges = [];
+        if (a.request) {
+            badges.push(h('p', { class: 'se-badge se-badge-request' }, [
+                h('strong', { text: a.replaces ? 'Changed: ' : 'You asked: ' }), '“' + a.request + '” ',
+                h('button', {
+                    type: 'button', class: 'se-link', text: a.replaces ? 'Undo' : 'Remove',
+                    onclick: function (ev) { undoChange(a, ev.target, msg); }
+                })
+            ]));
+        }
+        if (a.writer_figures) {
+            badges.push(h('p', { class: 'se-badge se-badge-writer', text: 'Uses your own figures. They are not checked against the data, so double-check them.' }));
+        }
+
+        return h('div', { class: 'se-card se-card-' + type + (inserted ? ' se-card-used' : ''), 'data-addon': a.id }, [
             h('div', { class: 'se-card-head' }, [
-                h('span', { class: 'se-pill', text: TEMPLATE_LABELS[a.template] || a.template }),
+                h('div', { class: 'se-card-type' }, [
+                    h('span', { class: 'se-pill se-pill-' + type, text: TYPE_NAMES[type][0] }),
+                    h('span', { class: 'se-type-label', text: TEMPLATE_LABELS[a.template] || a.template })
+                ]),
                 where.anchor ? h('button', {
                     type: 'button', class: 'se-where', title: 'Show this spot in the article',
                     onclick: function () { jumpTo(where.anchor, where.after_block); }
                 }, ['Goes after: “' + where.anchor.slice(0, 70) + (where.anchor.length > 70 ? '…' : '') + '”']) : null
             ]),
+            badges.length ? h('div', { class: 'se-badges' }, badges) : null,
             preview(a),
             h('p', { class: 'se-why', text: a.why }),
-            editor,
             actions,
+            changeBox(a),
+            editor,
             msg,
             h('p', { class: 'se-source', text: sourceLine(a) })
         ]);
@@ -1009,6 +1296,28 @@
             window.prompt('Copy the HTML:', html);
         }
     }
+
+    var focusEl = document.getElementById('se-focus');
+    if (!focusEl) {
+        focusEl = h('textarea', {
+            id: 'se-focus', rows: '2', class: 'se-input', maxlength: '400',
+            placeholder: 'e.g. “penalties and fines”, “Weeks 8 to 10, a different QB each week”, “compare with the 2022 Cardinals: 1-3, 15.5 points a game”'
+        });
+        var head = panel.querySelector('.se-head');
+        var wrap = h('label', { class: 'se-focus' }, [
+            h('span', { class: 'se-focus-label', text: 'Focus (optional)' }),
+            h('span', { class: 'se-focus-hint', text: 'Tell the tool what the graphics should be about: the angle, the games, a comparison. You can add your own figures.' }),
+            focusEl
+        ]);
+        if (head && head.parentNode) {
+            head.parentNode.insertBefore(wrap, head.nextSibling);
+        }
+    }
+    var focusKey = 'se-focus-' + S.postId;
+    if (!focusEl.value) {
+        focusEl.value = storageGet(focusKey) || '';
+    }
+    focusEl.addEventListener('input', function () { storageSet(focusKey, focusEl.value); });
 
     runBtn.addEventListener('click', function () { start(false); });
     setBusy(false);
