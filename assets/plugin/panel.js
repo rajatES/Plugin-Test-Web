@@ -22,7 +22,7 @@
         queued: 'Queued',
         start: 'Starting',
         plan: 'Reading the article',
-        fetch: 'Pulling stats from MySportsFeeds',
+        fetch: 'Pulling the stats',
         design: 'Choosing add-ons and writing headlines',
         render: 'Drawing the graphics',
         finished: 'Finishing up'
@@ -336,7 +336,7 @@
             }));
         }
         resultsEl.appendChild(h('p', { class: 'se-foot' }, [
-            'Numbers come from MySportsFeeds and are computed by code, not written by AI. ',
+            'Numbers come from the ES stats service (MySportsFeeds, nflverse, Retrosheet) and are computed by code, not written by AI. ',
             h('button', { type: 'button', class: 'se-link', text: 'Run fresh', onclick: function () { start(true); } }),
             ' ignores the saved result.'
         ]));
@@ -900,7 +900,7 @@
                 feeds.push(label);
             }
         });
-        return (a.source_line || 'Data: MySportsFeeds') + (feeds.length ? ' · ' + feeds.join(', ') : '');
+        return (a.source_line || '') + (feeds.length ? ' · ' + feeds.join(', ') : '');
     }
 
     function preview(a) {

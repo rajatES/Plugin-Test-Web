@@ -7,7 +7,7 @@
   var CATEGORIES = [
     { name: 'NFL', covered: true },
     { name: 'NBA', covered: true },
-    { name: 'MLB', covered: false },
+    { name: 'MLB', covered: true, note: '(past seasons, to 2025)' },
     { name: 'NHL', covered: false },
     { name: 'College Football', covered: false },
     { name: 'Tennis', covered: false }
@@ -958,10 +958,10 @@
       });
       label.appendChild(box);
       label.appendChild(document.createTextNode(c.name));
-      if (!c.covered) {
+      if (!c.covered || c.note) {
         var off = document.createElement('span');
         off.className = 'cat-off';
-        off.textContent = '(not covered yet)';
+        off.textContent = c.note || '(not covered yet)';
         label.appendChild(off);
       }
       host.appendChild(label);
