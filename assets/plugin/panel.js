@@ -39,7 +39,10 @@
         leaderboard: 'Leaderboard',
         key_numbers: 'By the numbers',
         context_card: 'Status card',
-        table: 'Stats table'
+        table: 'Stats table',
+        claim_card: 'Claim check',
+        turning_point: 'Turning point',
+        history_strip: 'History chart'
     };
 
     var FEED_LABELS = {
@@ -50,7 +53,9 @@
         league_player_totals: 'league player totals',
         league_team_totals: 'league team totals',
         standings: 'standings',
-        injuries: 'injury report'
+        injuries: 'injury report',
+        team_history: 'team history (every game)',
+        player_history: 'player history (every game)'
     };
 
     function h(tag, attrs, children) {
@@ -951,7 +956,10 @@
             key_numbers: ['Use more telling stats', 'Use these numbers: …'],
             table: ['Only the last 5 games', 'Fewer columns: keep …'],
             status: [],
-            context: []
+            context: [],
+            claim: ['Use different numbers: …', 'Quote a different line: …', 'Make the verdict more cautious'],
+            turning_point: ['Split at a different date: …', 'Show more games before', 'Use a different stat: …'],
+            history: ['Use a different stat: …', 'Go back fewer seasons']
         };
         return picks[a.recipe] || [];
     }
