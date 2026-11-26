@@ -390,7 +390,7 @@
             notes.push('Graphics use a stand-in headline font until the Acumin Pro Condensed Black file is added to the service.');
         }
         return h('div', { class: 'se-summary' }, [
-            h('div', { class: 'se-sum-row' }, [h('span', { class: 'se-pill', text: (r.league || '').toUpperCase() || 'STATS' })].concat(chips)),
+            h('div', { class: 'se-sum-row' }, [r.league ? h('span', { class: 'se-league', text: r.league.toUpperCase() }) : null].concat(chips)),
             lines.length ? h('div', { class: 'se-sum-lines' }, lines) : null,
             notes.length ? h('ul', { class: 'se-notes' }, notes.map(function (n) { return h('li', { text: n }); })) : null
         ]);
@@ -406,7 +406,6 @@
             var msg = h('p', { class: 'se-msg', hidden: true });
             var fixKey = state.job + ':fix-' + ci;
             return h('div', { class: 'se-check' }, [
-                h('div', { class: 'se-card-head' }, [h('span', { class: 'se-pill se-pill-fix', text: 'Figure to fix' })]),
                 h('p', { class: 'se-quote', text: '“' + c.quote + '”' }),
                 h('p', { class: 'se-check-values' }, [
                     'Your draft: ', h('strong', { text: c.article_value }),
@@ -605,10 +604,7 @@
         ]);
         return h('div', { class: 'se-sg' + (done ? ' se-card-used' : ''), 'data-sugg': s.id }, [
             h('div', { class: 'se-card-head' }, [
-                h('div', { class: 'se-card-type' }, [
-                    h('span', { class: 'se-pill se-pill-writing', text: 'writing' }),
-                    h('span', { class: 'se-type-label', text: SUGGEST_LABELS[s.type] || s.label || 'Suggestion' })
-                ]),
+                h('span', { class: 'se-type-label', text: SUGGEST_LABELS[s.type] || s.label || 'Suggestion' }),
                 s.anchor ? h('button', {
                     type: 'button', class: 'se-where', title: 'Show this spot in the article',
                     onclick: function () { jumpTo(s.quote || s.anchor, s.block); }
@@ -1070,10 +1066,7 @@
 
         return h('div', { class: 'se-card se-card-' + type + (inserted ? ' se-card-used' : ''), 'data-addon': a.id }, [
             h('div', { class: 'se-card-head' }, [
-                h('div', { class: 'se-card-type' }, [
-                    h('span', { class: 'se-pill se-pill-' + type, text: TYPE_NAMES[type][0] }),
-                    h('span', { class: 'se-type-label', text: TEMPLATE_LABELS[a.template] || a.template })
-                ]),
+                h('span', { class: 'se-type-label', text: TEMPLATE_LABELS[a.template] || a.template }),
                 where.anchor ? h('button', {
                     type: 'button', class: 'se-where', title: 'Show this spot in the article',
                     onclick: function () { jumpTo(where.anchor, where.after_block); }
